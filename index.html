@@ -1,120 +1,28 @@
-<!doctype html>
-<html lang="fi">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Rakuunamäki – GPS-kävelytesti</title>
-<style>
-body{margin:0;background:#ead8b3;color:#30241c;font-family:Arial,sans-serif}
-main{max-width:720px;margin:auto;padding:20px}
-h1{font-family:Georgia,serif;font-size:36px;margin-bottom:8px}
-.card{background:#f5ead3;border:1px solid #b69466;border-radius:14px;padding:18px;margin:14px 0}
-button{width:100%;padding:16px;margin:6px 0;border:0;border-radius:8px;font-size:19px;font-weight:bold;background:#93462e;color:#fff}
-.stop{background:#5a3929}
-.ok{color:#176b34;font-weight:bold}.warn{color:#9b2525;font-weight:bold}
-.point{padding:12px 0;border-bottom:1px solid #d1b98f}.point:last-child{border:0}
-.done{color:#176b34;font-weight:bold}
-#media{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:1000;align-items:center;justify-content:center;padding:12px}
-#mediaBox{width:min(92vw,620px);height:min(86vh,820px);background:#ead8b3;border-radius:16px;position:relative;overflow:hidden}
-#storyVideo{width:100%;height:100%;object-fit:contain}
-#close{position:absolute;right:12px;top:12px;z-index:2;width:44px;height:44px;border-radius:50%;padding:0;background:#7a241f}
-#now{position:absolute;left:12px;right:12px;bottom:12px;background:rgba(0,0,0,.7);color:white;padding:10px;border-radius:8px}
-.small{font-size:14px;line-height:1.45}
-</style>
-</head>
-<body><main>
-<h1>Rakuunamäki – GPS-testi</h1>
-<p>Neljä testipistettä. Tarina käynnistyy automaattisesti noin 30 metrin säteellä.</p>
-
-<div class="card">
-<button id="start">▶ Aloita kävelytesti</button>
-<button id="stop" class="stop" disabled>■ Lopeta testi</button>
-<p id="status">Ei käynnissä</p>
-<p>Näytön hereilläpito: <b id="wake">Ei käytössä</b></p>
-<p>GPS-tarkkuus: <b id="accuracy">–</b> &nbsp; | &nbsp; lähin piste: <b id="nearest">–</b></p>
-</div>
-
-<div class="card" id="points"></div>
-
-<div class="card small">
-Pidä sivu auki kävelyn ajan. Aloita testi ennen ensimmäistä pistettä. Jokainen kohde laukeaa vain kerran tämän testin aikana. Aukio on mukana erillisenä loppupisteenä.
-</div>
-</main>
-
-<div id="media">
- <div id="mediaBox">
-  <button id="close">✕</button>
-  <video id="storyVideo" playsinline controls preload="auto"></video>
-  <div id="now"></div>
- </div>
-</div>
-
-<script>
+<!doctype html><html lang="fi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rakuunamäki GPS MP3 -testi</title><style>
+body{font-family:system-ui;margin:0;background:#f4f4f4;color:#222}main{max-width:650px;margin:auto;padding:22px}.card{background:#fff;border-radius:16px;padding:20px}
+button{font-size:18px;padding:14px;width:100%;border:0;border-radius:12px;background:#222;color:#fff}.point{padding:9px 0;border-top:1px solid #ddd}#status{margin:18px 0;line-height:1.6}
+</style></head><body><main><div class="card"><h1>Rakuunamäki – GPS/MP3-testi</h1>
+<p>Neljä testipistettä. Selostus käynnistyy noin 30 metrin päässä.</p><button id="start">Aloita kävelytesti</button><div id="status">Testi ei ole käynnissä.</div><div id="points"></div>
+<p><small>Pidä selain avoinna. Älä sammuta näyttöä virtapainikkeesta.</small></p></div></main><script>
 const RADIUS=30;
-const points=[
- {name:"Suomen ratsuväen muistomerkki",lat:61.059663,lng:28.180214,file:"ratsuvaenpatsas.webm"},
- {name:"Rakuunamäen pääportti & Pave Maijanen",lat:61.0597830,lng:28.1789770,file:"paaportti.webm"},
- {name:"Päävartiorakennus",lat:61.0591569,lng:28.1784266,file:"paavartio.webm"},
- {name:"Adolf Ehrnroothin aukio",lat:61.060096,lng:28.174944,file:"aukio.webm"}
-];
-let watch=null,wake=null,running=false,playing=false;
-const fired=new Set(), E=id=>document.getElementById(id), video=E("storyVideo");
-
-function dist(a,b,c,d){
- const R=6371000,p=x=>x*Math.PI/180,da=p(c-a),db=p(d-b);
- const q=Math.sin(da/2)**2+Math.cos(p(a))*Math.cos(p(c))*Math.sin(db/2)**2;
- return 2*R*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));
-}
-function render(){
- E("points").innerHTML=points.map((p,i)=>`<div class="point"><b>${i+1}. ${p.name}</b><br><span id="p${i}">${fired.has(i)?"✓ Lauennut":"Odottaa"}</span></div>`).join("");
-}
-async function keepAwake(){
- if("wakeLock" in navigator){
-  try{wake=await navigator.wakeLock.request("screen");E("wake").textContent="Päällä ✓";E("wake").className="ok"}
-  catch(e){E("wake").textContent="Ei onnistunut"}
- }
-}
-async function showStory(i){
- if(playing || fired.has(i)) return;
- fired.add(i); render(); playing=true;
- const p=points[i]; E("now").textContent=p.name;
- E("media").style.display="flex"; video.src=p.file;
- try{await video.play()}catch(e){
-   E("now").textContent=p.name+" – automaattinen toisto estyi, paina Play.";
- }
-}
-function closeStory(){video.pause();video.removeAttribute("src");video.load();E("media").style.display="none";playing=false}
-video.addEventListener("ended",closeStory);
-E("close").onclick=closeStory;
-
-E("start").onclick=async()=>{
- fired.clear();render();running=true;await keepAwake();
- E("start").disabled=true;E("stop").disabled=false;E("status").textContent="Haetaan GPS-sijaintia…";
- // Herätetään mediasoitin käyttäjän painalluksella, jotta myöhempi automaattitoisto toimii mahdollisimman luotettavasti.
- video.src=points[0].file; video.muted=true;
- try{await video.play();video.pause();video.currentTime=0}catch(e){}
- video.muted=false;video.removeAttribute("src");video.load();
-
- watch=navigator.geolocation.watchPosition(pos=>{
-   const lat=pos.coords.latitude,lng=pos.coords.longitude;
-   E("accuracy").textContent=Math.round(pos.coords.accuracy)+" m";
-   E("status").textContent="GPS toimii";E("status").className="ok";
-   let best=Infinity,bestName="";
-   points.forEach((p,i)=>{
-     const m=dist(lat,lng,p.lat,p.lng);
-     if(m<best){best=m;bestName=p.name}
-     if(!playing && !fired.has(i) && m<=R) showStory(i);
-   });
-   E("nearest").textContent=bestName+" – "+Math.round(best)+" m";
- },err=>{E("status").textContent="GPS-virhe: "+err.message;E("status").className="warn"},
- {enableHighAccuracy:true,maximumAge:0,timeout:15000});
-};
-E("stop").onclick=async()=>{
- running=false;if(watch!==null)navigator.geolocation.clearWatch(watch);watch=null;closeStory();
- if(wake)try{await wake.release()}catch(e){} wake=null;
- E("wake").textContent="Ei käytössä";E("wake").className="";
- E("start").disabled=false;E("stop").disabled=true;E("status").textContent="Testi lopetettu";E("status").className="";
-};
-document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&running&&!wake)await keepAwake()});
-render();
-</script></body></html>
+const pts=[
+["Suomen ratsuväen muistomerkki",61.059663,28.180214,"ratsuvaenpatsas.mp3"],
+["Rakuunamäen pääportti & Pave Maijanen",61.0597830,28.1789770,"paaportti.mp3"],
+["Päävartiorakennus",61.0591569,28.1784266,"paavartio.mp3"],
+["Adolf Ehrnroothin aukio",61.060096,28.174944,"aukio.mp3"]];
+const audio=pts.map(p=>new Audio(p[3]));let played=new Set(),playing=false,started=false,wake=null;
+function dist(a,b,c,d){const R=6371000,r=Math.PI/180,x=(d-b)*r*Math.cos((a+c)*r/2),y=(c-a)*r;return Math.sqrt(x*x+y*y)*R}
+function render(){points.innerHTML=pts.map((p,i)=>`<div class="point">${played.has(i)?"✓ ":""}${p[0]}</div>`).join("")}
+async function awake(){try{if("wakeLock"in navigator)wake=await navigator.wakeLock.request("screen")}catch(e){}}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&started)awake()});
+async function play(i){if(playing||played.has(i))return;playing=true;played.add(i);render();let a=audio[i];a.currentTime=0;
+try{await a.play();status.innerHTML=`<b>Kohde saavutettu!</b><br>${pts[i][0]}<br>Selostus soi.`}catch(e){status.innerHTML=`<b>GPS laukesi:</b> ${pts[i][0]}<br>Ääni ei käynnistynyt.`;playing=false}
+a.onended=()=>playing=false}
+start.onclick=async()=>{if(started)return;started=true;await awake();
+try{audio[0].muted=true;await audio[0].play();audio[0].pause();audio[0].currentTime=0;audio[0].muted=false}catch(e){}
+status.textContent="GPS käynnistyy…";
+navigator.geolocation.watchPosition(pos=>{let n=-1,nd=Infinity;pts.forEach((p,i)=>{let d=dist(pos.coords.latitude,pos.coords.longitude,p[1],p[2]);if(d<nd){nd=d;n=i}});
+status.innerHTML=`GPS-tarkkuus: noin ${Math.round(pos.coords.accuracy)} m<br>Lähin piste: <b>${pts[n][0]}</b><br>Etäisyys: <b>${Math.round(nd)} m</b>`;
+if(nd<=RADIUS&&!playing&&!played.has(n))play(n)},e=>status.textContent="GPS-virhe: "+e.message,{enableHighAccuracy:true,maximumAge:0,timeout:15000})};
+render();</script></body></html>
