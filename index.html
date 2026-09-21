@@ -1,4 +1,6 @@
 <!doctype html><html lang="fi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rakuunamäki GPS</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *{box-sizing:border-box}
 body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;background:#0c0e0d;color:#f3f0e8}
@@ -8,7 +10,7 @@ main{max-width:680px;margin:auto;padding:18px}
 h1{font-family:Georgia,serif;font-size:34px;line-height:1.05;margin:0 0 8px}
 .lead{color:#d0d2cd;margin:0 0 16px;line-height:1.5}
 .tag{display:inline-block;border:1px solid #574a31;border-radius:999px;padding:5px 10px;color:#dbc58f;font-size:12px;margin-bottom:16px}
-button{font-size:18px;padding:15px;width:100%;border:0;border-radius:13px;background:#9a7135;color:#fff;font-weight:750;cursor:pointer;margin-top:8px}.secondary{background:#252a26;border:1px solid #4a5149;color:#eee}.route-box{margin-top:12px;background:#101210;border:1px solid #30352f;border-radius:13px;padding:12px}.route-stop{padding:8px 4px;border-bottom:1px solid #292d29;line-height:1.3}.route-stop:last-child{border-bottom:0}
+button{font-size:18px;padding:15px;width:100%;border:0;border-radius:13px;background:#9a7135;color:#fff;font-weight:750;cursor:pointer;margin-top:8px}.secondary{background:#252a26;border:1px solid #4a5149;color:#eee}.route-box{margin-top:12px;background:#101210;border:1px solid #30352f;border-radius:13px;padding:8px;overflow:hidden}#routeMap{height:52vh;min-height:360px;border-radius:10px}.route-stop{padding:8px 4px;border-bottom:1px solid #292d29;line-height:1.3}.route-stop:last-child{border-bottom:0}
 #status{margin:18px 0;line-height:1.55;background:#101210;border:1px solid #2b302b;border-radius:13px;padding:15px}
 .route-title{margin:22px 0 7px;font-size:16px;color:#ead7aa;font-weight:700}
 .p{padding:10px 2px;border-top:1px solid #30352f;color:#d8d9d5}
@@ -23,7 +25,7 @@ small{color:#9da29b}
 <div class="tag">12 kohdetta · GPS-äänikävely</div>
 <button id="start">▶ Aloita kävely</button>
 <button id="routeBtn" class="secondary">Näytä reitti</button>
-<div id="routeBox" class="route-box" hidden></div>
+<div id="routeBox" class="route-box" hidden><div id="routeMap"></div></div>
 <div id="status">Kävely ei ole vielä käynnissä.</div>
 <div class="route-title">Kävelyn kohteet</div>
 <div id="list"></div>
@@ -38,15 +40,27 @@ const routeBtn=document.getElementById("routeBtn");
 const routeBox=document.getElementById("routeBox");
 function d(a,b,c,e){const R=6371000,r=Math.PI/180,x=(e-b)*r*Math.cos((a+c)*r/2),y=(c-a)*r;return Math.sqrt(x*x+y*y)*R}
 function draw(){listEl.innerHTML=pts.map((p,i)=>`<div class="p ${done.has(i)?"done":""}">${done.has(i)?"✓ ":""}${i+1}. ${p.name} <small>(${p.radius} m)</small></div>`).join("")}
-function drawRoute(){
-routeBox.innerHTML=pts.map((p,i)=>`<div class="route-stop">${i+1}. ${p.name}</div>`).join("");
+let routeMap=null;
+function openRouteMap(){
+if(routeMap){setTimeout(()=>routeMap.invalidateSize(),50);return;}
+routeMap=L.map("routeMap",{scrollWheelZoom:false}).setView([61.0592,28.1758],16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+maxZoom:19,
+attribution:"&copy; OpenStreetMap"
+}).addTo(routeMap);
+const line=pts.map(p=>[p.lat,p.lon]);
+L.polyline(line).addTo(routeMap);
+pts.forEach((p,i)=>{
+L.marker([p.lat,p.lon]).addTo(routeMap).bindTooltip(`${i+1}. ${p.name}`);
+});
+routeMap.fitBounds(line,{padding:[22,22]});
 }
 routeBtn.onclick=()=>{
 const opening=routeBox.hidden;
 routeBox.hidden=!opening;
 routeBtn.textContent=opening?"Sulje reitti":"Näytä reitti";
+if(opening)setTimeout(openRouteMap,30);
 };
-drawRoute();
 async function awake(){try{if("wakeLock"in navigator)wake=await navigator.wakeLock.request("screen")}catch(e){}}
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&started)awake()});
 async function play(i){if(playing||done.has(i))return;playing=true;done.add(i);draw();let a=aud[i];a.currentTime=0;try{await a.play();statusEl.innerHTML=`<b>Kohde saavutettu!</b><br>${i+1}. ${pts[i].name}<br>Selostus soi.`}catch(e){statusEl.innerHTML=`<b>GPS laukesi:</b> ${pts[i].name}<br>Ääni ei käynnistynyt.`;playing=false}a.onended=()=>playing=false}
