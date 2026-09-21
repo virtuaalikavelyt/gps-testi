@@ -8,7 +8,7 @@ main{max-width:680px;margin:auto;padding:18px}
 h1{font-family:Georgia,serif;font-size:34px;line-height:1.05;margin:0 0 8px}
 .lead{color:#d0d2cd;margin:0 0 16px;line-height:1.5}
 .tag{display:inline-block;border:1px solid #574a31;border-radius:999px;padding:5px 10px;color:#dbc58f;font-size:12px;margin-bottom:16px}
-button{font-size:18px;padding:15px;width:100%;border:0;border-radius:13px;background:#9a7135;color:#fff;font-weight:750;cursor:pointer}
+button{font-size:18px;padding:15px;width:100%;border:0;border-radius:13px;background:#9a7135;color:#fff;font-weight:750;cursor:pointer;margin-top:8px}.secondary{background:#252a26;border:1px solid #4a5149;color:#eee}.route-box{margin-top:12px;background:#101210;border:1px solid #30352f;border-radius:13px;padding:12px}.route-stop{padding:8px 4px;border-bottom:1px solid #292d29;line-height:1.3}.route-stop:last-child{border-bottom:0}
 #status{margin:18px 0;line-height:1.55;background:#101210;border:1px solid #2b302b;border-radius:13px;padding:15px}
 .route-title{margin:22px 0 7px;font-size:16px;color:#ead7aa;font-weight:700}
 .p{padding:10px 2px;border-top:1px solid #30352f;color:#d8d9d5}
@@ -22,6 +22,8 @@ small{color:#9da29b}
 <p class="lead">Kulje historiallisen kasarmialueen halki. Tarinat käynnistyvät automaattisesti, kun saavut kohteisiin.</p>
 <div class="tag">12 kohdetta · GPS-äänikävely</div>
 <button id="start">▶ Aloita kävely</button>
+<button id="routeBtn" class="secondary">Näytä reitti</button>
+<div id="routeBox" class="route-box" hidden></div>
 <div id="status">Kävely ei ole vielä käynnissä.</div>
 <div class="route-title">Kävelyn kohteet</div>
 <div id="list"></div>
@@ -31,11 +33,32 @@ small{color:#9da29b}
 const startBtn=document.getElementById("start");
 const statusEl=document.getElementById("status");
 const listEl=document.getElementById("list");
-let done=new Set(),playing=false,started=false,wake;
+let done=new Set(),playing=false,started=false,wake,watchId=null;
+const routeBtn=document.getElementById("routeBtn");
+const routeBox=document.getElementById("routeBox");
 function d(a,b,c,e){const R=6371000,r=Math.PI/180,x=(e-b)*r*Math.cos((a+c)*r/2),y=(c-a)*r;return Math.sqrt(x*x+y*y)*R}
 function draw(){listEl.innerHTML=pts.map((p,i)=>`<div class="p ${done.has(i)?"done":""}">${done.has(i)?"✓ ":""}${i+1}. ${p.name} <small>(${p.radius} m)</small></div>`).join("")}
+function drawRoute(){
+routeBox.innerHTML=pts.map((p,i)=>`<div class="route-stop">${i+1}. ${p.name}</div>`).join("");
+}
+routeBtn.onclick=()=>{
+const opening=routeBox.hidden;
+routeBox.hidden=!opening;
+routeBtn.textContent=opening?"Sulje reitti":"Näytä reitti";
+};
+drawRoute();
 async function awake(){try{if("wakeLock"in navigator)wake=await navigator.wakeLock.request("screen")}catch(e){}}
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&started)awake()});
 async function play(i){if(playing||done.has(i))return;playing=true;done.add(i);draw();let a=aud[i];a.currentTime=0;try{await a.play();statusEl.innerHTML=`<b>Kohde saavutettu!</b><br>${i+1}. ${pts[i].name}<br>Selostus soi.`}catch(e){statusEl.innerHTML=`<b>GPS laukesi:</b> ${pts[i].name}<br>Ääni ei käynnistynyt.`;playing=false}a.onended=()=>playing=false}
-startBtn.onclick=async()=>{if(started)return;started=true;await awake();try{aud[0].muted=true;await aud[0].play();aud[0].pause();aud[0].currentTime=0;aud[0].muted=false}catch(e){}
-statusEl.textContent="GPS käynnistyy…";navigator.geolocation.watchPosition(pos=>{let n=-1,nd=Infinity;pts.forEach((p,i)=>{if(done.has(i))return;let x=d(pos.coords.latitude,pos.coords.longitude,p.lat,p.lon);if(x<nd){nd=x;n=i}});if(n<0){statusEl.innerHTML=`GPS-tarkkuus: noin ${Math.round(pos.coords.accuracy)} m<br><b>Kaikki 12 kohdetta kuunneltu.</b>`;return}let p=pts[n];statusEl.innerHTML=`GPS-tarkkuus: noin ${Math.round(pos.coords.accuracy)} m<br>Lähin kuuntelematon piste: <b>${n+1}. ${p.name}</b><br>Etäisyys: <b>${Math.round(nd)} m</b> · laukaisu ${p.radius} m`;if(nd<=p.radius&&!playing)play(n)},e=>statusEl.textContent="GPS-virhe: "+e.message,{enableHighAccuracy:true,maximumAge:0,timeout:15000})};draw();</script></body></html>
+async function stopWalk(){
+if(!started)return;
+started=false;
+if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
+aud.forEach(a=>{a.pause();a.currentTime=0;});
+playing=false;
+if(wake){try{await wake.release()}catch(e){} wake=null;}
+startBtn.textContent="▶ Aloita kävely";
+statusEl.innerHTML="<b>Kävely lopetettu.</b><br>GPS-seuranta ei ole enää päällä.";
+}
+startBtn.onclick=async()=>{if(started){await stopWalk();return;}started=true;startBtn.textContent="■ Lopeta kävely";await awake();try{aud[0].muted=true;await aud[0].play();aud[0].pause();aud[0].currentTime=0;aud[0].muted=false}catch(e){}
+statusEl.textContent="GPS käynnistyy…";watchId=navigator.geolocation.watchPosition(pos=>{let n=-1,nd=Infinity;pts.forEach((p,i)=>{if(done.has(i))return;let x=d(pos.coords.latitude,pos.coords.longitude,p.lat,p.lon);if(x<nd){nd=x;n=i}});if(n<0){statusEl.innerHTML=`GPS-tarkkuus: noin ${Math.round(pos.coords.accuracy)} m<br><b>Kaikki 12 kohdetta kuunneltu.</b>`;return}let p=pts[n];statusEl.innerHTML=`GPS-tarkkuus: noin ${Math.round(pos.coords.accuracy)} m<br>Lähin kuuntelematon piste: <b>${n+1}. ${p.name}</b><br>Etäisyys: <b>${Math.round(nd)} m</b> · laukaisu ${p.radius} m`;if(nd<=p.radius&&!playing)play(n)},e=>statusEl.textContent="GPS-virhe: "+e.message,{enableHighAccuracy:true,maximumAge:0,timeout:15000})};draw();</script></body></html>
